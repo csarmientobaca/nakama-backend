@@ -1,0 +1,11 @@
+{
+  "files": ["./modules/main.ts"],
+  "compilerOptions": {
+    "target": "es5",
+    "module": "none",
+    "outFile": "./modules/index.js",
+    "strict": true,
+    "skipLibCheck": true,
+    "typeRoots": ["./node_modules"]
+  }
+}
