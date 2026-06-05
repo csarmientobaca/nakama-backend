@@ -21,6 +21,7 @@ type Character = {
   name: string;
   race: string;
   class: string;
+  house: string | null;
   level: number;
   xp: number;
   gold: number;
@@ -44,6 +45,7 @@ let InitModule: nkruntime.InitModule = function (
   initializer.registerRpc("create_character", rpcCreateCharacter);
   initializer.registerRpc("get_character", rpcGetCharacter);
   initializer.registerRpc("get_dashboard", rpcGetDashboard);
+  initializer.registerRpc("get_profile_state", rpcGetProfileState);
 
   logger.info("Grunt and Run backend milestone RPCs registered.");
 };
@@ -70,6 +72,7 @@ function rpcCreateCharacter(
     name,
     race,
     class: characterClass,
+    house: null,
     level: 1,
     xp: 0,
     gold: 0,
@@ -113,19 +116,35 @@ function rpcGetDashboard(
     throw new Error("character_not_found");
   }
 
+  return JSON.stringify(buildDashboardPayload(character));
+}
+
+function rpcGetProfileState(
+  ctx: nkruntime.Context,
+  logger: nkruntime.Logger,
+  nk: nkruntime.Nakama,
+  payload: string
+): string {
+  const userId = requireUserId(ctx);
+  const character = readCharacter(nk, userId);
+
+  if (!character) {
+    return JSON.stringify({
+      has_character: false,
+      has_house: false,
+      character_status: "none",
+      next_screen: "character_creation",
+    });
+  }
+
   return JSON.stringify({
+    has_character: true,
+    has_house: Boolean(character.house),
+    character_status: "alive",
+    next_screen: "dashboard",
     character,
     stats: character.stats,
-    dashboard: {
-      sections: [
-        "character_tree",
-        "world_map",
-        "market",
-        "chat",
-        "mission_board",
-      ],
-      milestone: "character_created",
-    },
+    dashboard: buildDashboard(character),
   });
 }
 
@@ -234,6 +253,36 @@ function getStartingStats(race: string, characterClass: string): CharacterStats 
   return defaults[race][characterClass];
 }
 
+function buildDashboardPayload(character: Character): {
+  character: Character;
+  stats: CharacterStats;
+  dashboard: ReturnType<typeof buildDashboard>;
+} {
+  return {
+    character,
+    stats: character.stats,
+    dashboard: buildDashboard(character),
+  };
+}
+
+function buildDashboard(character: Character): {
+  sections: string[];
+  milestone: string;
+  has_house: boolean;
+} {
+  return {
+    sections: [
+      "character_tree",
+      "world_map",
+      "market",
+      "chat",
+      "mission_board",
+    ],
+    milestone: "character_created",
+    has_house: Boolean(character.house),
+  };
+}
+
 function readCharacter(nk: nkruntime.Nakama, userId: string): Character | null {
   const records = nk.storageRead([
     {
@@ -247,7 +296,15 @@ function readCharacter(nk: nkruntime.Nakama, userId: string): Character | null {
     return null;
   }
 
-  return records[0].value as Character;
+  return normalizeStoredCharacter(records[0].value as Character);
+}
+
+function normalizeStoredCharacter(character: Character): Character {
+  if (typeof character.house === "undefined") {
+    character.house = null;
+  }
+
+  return character;
 }
 
 function assertNoExistingCharacter(nk: nkruntime.Nakama, userId: string): void {

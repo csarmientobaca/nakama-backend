@@ -10,6 +10,7 @@ var InitModule = function (ctx, logger, nk, initializer) {
     initializer.registerRpc("create_character", rpcCreateCharacter);
     initializer.registerRpc("get_character", rpcGetCharacter);
     initializer.registerRpc("get_dashboard", rpcGetDashboard);
+    initializer.registerRpc("get_profile_state", rpcGetProfileState);
     logger.info("Grunt and Run backend milestone RPCs registered.");
 };
 function rpcCreateCharacter(ctx, logger, nk, payload) {
@@ -26,6 +27,7 @@ function rpcCreateCharacter(ctx, logger, nk, payload) {
         name: name,
         race: race,
         class: characterClass,
+        house: null,
         level: 1,
         xp: 0,
         gold: 0,
@@ -51,19 +53,27 @@ function rpcGetDashboard(ctx, logger, nk, payload) {
     if (!character) {
         throw new Error("character_not_found");
     }
+    return JSON.stringify(buildDashboardPayload(character));
+}
+function rpcGetProfileState(ctx, logger, nk, payload) {
+    var userId = requireUserId(ctx);
+    var character = readCharacter(nk, userId);
+    if (!character) {
+        return JSON.stringify({
+            has_character: false,
+            has_house: false,
+            character_status: "none",
+            next_screen: "character_creation",
+        });
+    }
     return JSON.stringify({
+        has_character: true,
+        has_house: Boolean(character.house),
+        character_status: "alive",
+        next_screen: "dashboard",
         character: character,
         stats: character.stats,
-        dashboard: {
-            sections: [
-                "character_tree",
-                "world_map",
-                "market",
-                "chat",
-                "mission_board",
-            ],
-            milestone: "character_created",
-        },
+        dashboard: buildDashboard(character),
     });
 }
 function parseCreateCharacterPayload(payload) {
@@ -154,6 +164,26 @@ function getStartingStats(race, characterClass) {
     };
     return defaults[race][characterClass];
 }
+function buildDashboardPayload(character) {
+    return {
+        character: character,
+        stats: character.stats,
+        dashboard: buildDashboard(character),
+    };
+}
+function buildDashboard(character) {
+    return {
+        sections: [
+            "character_tree",
+            "world_map",
+            "market",
+            "chat",
+            "mission_board",
+        ],
+        milestone: "character_created",
+        has_house: Boolean(character.house),
+    };
+}
 function readCharacter(nk, userId) {
     var records = nk.storageRead([
         {
@@ -165,7 +195,13 @@ function readCharacter(nk, userId) {
     if (records.length === 0) {
         return null;
     }
-    return records[0].value;
+    return normalizeStoredCharacter(records[0].value);
+}
+function normalizeStoredCharacter(character) {
+    if (typeof character.house === "undefined") {
+        character.house = null;
+    }
+    return character;
 }
 function assertNoExistingCharacter(nk, userId) {
     if (readCharacter(nk, userId)) {
